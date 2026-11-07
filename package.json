@@ -1,0 +1,21 @@
+{
+  "name": "anime-recommender-cli",
+  "version": "1.0.0",
+  "description": "A simple cli anime recommender",
+  "license": "MIT",
+  "author": "Cole Landers",
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc --noEmit && oxlint && tsdown",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "oxlint": "^1.92.0",
+    "tsdown": "^0.23.7",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

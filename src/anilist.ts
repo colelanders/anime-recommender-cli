@@ -294,7 +294,10 @@ class RateLimiter {
 
   /** Holds requests back for as long as AniList has asked us to wait. */
   blockFor(seconds: number): void {
-    this.#blockedUntil = Date.now() + seconds * 1000;
+    this.#blockedUntil = Math.max(
+      this.#blockedUntil,
+      Date.now() + seconds * 1000,
+    );
   }
 
   #limitError(reason: string, waitMs: number): AniListError {
@@ -323,15 +326,42 @@ export const configureRateLimit = (settings: Partial<RateLimit>): void => {
   rateLimiter = new RateLimiter(limit);
 };
 
-type ResponseBody = { data?: unknown; errors?: AniListErrorDetail[] };
+type ResponseBody = { data: unknown; errors: AniListErrorDetail[] };
+
+const isErrorDetail = (value: unknown): value is AniListErrorDetail =>
+  typeof value === "object" &&
+  value !== null &&
+  "message" in value &&
+  typeof value.message === "string";
 
 const readBody = async (response: Response): Promise<ResponseBody> => {
   try {
     const body: unknown = await response.json();
-    return typeof body === "object" && body !== null ? body : {};
+    if (typeof body !== "object" || body === null) {
+      return { data: undefined, errors: [] };
+    }
+    return {
+      data: "data" in body ? body.data : undefined,
+      errors:
+        "errors" in body && Array.isArray(body.errors)
+          ? body.errors.filter(isErrorDetail)
+          : [],
+    };
   } catch {
-    return {};
+    return { data: undefined, errors: [] };
   }
+};
+
+/** Reads a Retry-After header, which is either whole seconds or an HTTP date. */
+const parseRetryAfter = (header: string | null): number | undefined => {
+  const value = header?.trim() ?? "";
+  if (/^\d+$/.test(value)) {
+    return Number(value);
+  }
+  const retryAt = /^[A-Za-z]/.test(value) ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(retryAt)
+    ? undefined
+    : Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
 };
 
 const parseVariables = (variables: string): unknown => {
@@ -368,11 +398,10 @@ export const execute = async <R>(
   rateLimiter.acquire();
   const response = await send(query, parsedVariables);
   const { status } = response;
-  const { data, errors = [] } = await readBody(response);
+  const { data, errors } = await readBody(response);
 
   if (!response.ok || errors.length > 0 || data === undefined || data === null) {
-    const header = Number(response.headers.get("Retry-After") ?? Number.NaN);
-    const retryAfter = Number.isNaN(header) ? undefined : header;
+    const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
     if (retryAfter !== undefined) {
       rateLimiter.blockFor(retryAfter);
     }

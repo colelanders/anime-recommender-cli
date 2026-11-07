@@ -264,6 +264,11 @@ const stubSuccess = () => {
   return fetchStub;
 };
 
+const rateLimited = (retryAfter: string) =>
+  jsonResponse({ errors: [{ message: "Limited" }] }, 429, {
+    "Retry-After": retryAfter,
+  });
+
 const advanceSeconds = (seconds: number) => {
   vi.setSystemTime(Date.now() + seconds * 1000);
 };
@@ -566,9 +571,9 @@ describe("execute", () => {
       );
       vi.stubGlobal("fetch", fetchStub);
 
-      const rateLimited = await failure();
-      expect(rateLimited.status).toBe(429);
-      expect(rateLimited.message).toContain("Try again in 90 seconds");
+      const limited = await failure();
+      expect(limited.status).toBe(429);
+      expect(limited.message).toContain("Try again in 90 seconds");
 
       advanceSeconds(30);
       const blocked = await failure();
@@ -580,5 +585,100 @@ describe("execute", () => {
       await failure();
       expect(fetchStub).toHaveBeenCalledTimes(2);
     });
+
+    test("doesn't let a shorter Retry-After reduce a longer wait", async () => {
+      const responses: ((response: Response) => void)[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(
+          () =>
+            new Promise((resolve) => {
+              responses.push(resolve);
+            }),
+        ),
+      );
+      const first = failure();
+      const second = failure();
+
+      responses[0]?.(rateLimited("90"));
+      await first;
+      advanceSeconds(1);
+      responses[1]?.(rateLimited("10"));
+      await second;
+      advanceSeconds(10);
+
+      expect((await failure()).retryAfter).toBe(79);
+    });
+
+    test("reads a Retry-After date as a wait in seconds", async () => {
+      const retryAt = new Date(Date.now() + 90_000).toUTCString();
+      const fetchStub = stubFetch(rateLimited(retryAt));
+
+      const error = await failure();
+      expect(error.retryAfter).toBe(90);
+
+      advanceSeconds(30);
+      expect((await failure()).retryAfter).toBe(60);
+      expect(fetchStub).toHaveBeenCalledOnce();
+    });
+
+    test("treats a Retry-After date in the past as no wait", async () => {
+      const retryAt = new Date(Date.now() - 90_000).toUTCString();
+      stubFetch(rateLimited(retryAt));
+
+      expect((await failure()).retryAfter).toBe(0);
+    });
+
+    test.each(["", "soon", "-5", "1.5"])(
+      "ignores an invalid Retry-After: %j",
+      async (retryAfter) => {
+        stubFetch(jsonResponse({}, 429, { "Retry-After": retryAfter }));
+
+        expect((await failure()).retryAfter).toBeUndefined();
+      },
+    );
+  });
+
+  describe("malformed responses", () => {
+    test.each([{ errors: null }, { errors: "boom" }, { errors: { a: 1 } }])(
+      "throws AniListError for an HTTP error with %j",
+      async (body) => {
+        stubFetch(jsonResponse(body, 500));
+
+        const error = await failure();
+
+        expect(error.status).toBe(500);
+        expect(error.errors).toEqual([]);
+      },
+    );
+
+    test("keeps only error entries that have a message", async () => {
+      stubFetch(
+        jsonResponse(
+          { errors: [{ message: "Real" }, { code: 1 }, null, "text"] },
+          500,
+        ),
+      );
+
+      const error = await failure();
+
+      expect(error.errors).toEqual([{ message: "Real" }]);
+      expect(error.message).toContain("Real");
+    });
+
+    test("returns data when errors is null on a successful response", async () => {
+      stubFetch(jsonResponse({ data: { GenreCollection: [] }, errors: null }));
+
+      await expect(execute(query)).resolves.toEqual({ GenreCollection: [] });
+    });
+
+    test.each([[1], "text", null])(
+      "throws AniListError for a response body of %j",
+      async (body) => {
+        stubFetch(jsonResponse(body));
+
+        expect((await failure()).status).toBe(200);
+      },
+    );
   });
 });

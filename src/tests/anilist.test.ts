@@ -126,6 +126,65 @@ describe("QueryBuilder", () => {
     expect(() => builder.build()).toThrow(/id\) \{ id \} #/);
   });
 
+  test("allows an empty arguments object on a field with no arguments", () => {
+    const query = new QueryBuilder("Me")
+      .field("Viewer", {}, (viewer) => viewer.select("id"))
+      .build();
+
+    expect(query).toBe("query Me { Viewer { id } }");
+  });
+
+  test("throws when a field is selected twice with different arguments", () => {
+    const builder = new QueryBuilder("Q")
+      .field("Media", { id: "first" }, (media) => media.select("id"))
+      .field("Media", { id: "second" }, (media) => media.select("id"));
+
+    expect(() => builder.build()).toThrow(/Query\.Media.*first.*second/);
+  });
+
+  test("throws when only one of two selections has arguments", () => {
+    const builder = new QueryBuilder("Q")
+      .field("Media", { id: "id" }, (media) => media.select("id"))
+      .field("Media", (media) => media.select("id"));
+
+    expect(() => builder.build()).toThrow(/Query\.Media/);
+  });
+
+  test("throws on conflicting selections in a nested field", () => {
+    const builder = new QueryBuilder("Q").field("Media", (media) =>
+      media
+        .field("characters", { page: "a" }, (c) => c.field("nodes", (n) => n.select("id")))
+        .field("characters", { page: "b" }, (c) => c.field("nodes", (n) => n.select("id"))),
+    );
+
+    expect(() => builder.build()).toThrow(/Query\.Media\.characters/);
+  });
+
+  test("throws on conflicts inside duplicates that GraphQL would merge", () => {
+    const builder = new QueryBuilder("Q")
+      .field("Media", { id: "id" }, (media) =>
+        media.field("characters", { page: "a" }, (c) => c.field("nodes", (n) => n.select("id"))),
+      )
+      .field("Media", { id: "id" }, (media) =>
+        media.field("characters", { page: "b" }, (c) => c.field("nodes", (n) => n.select("id"))),
+      );
+
+    expect(() => builder.build()).toThrow(/Query\.Media\.characters/);
+  });
+
+  test("allows duplicates with the same arguments in any order", () => {
+    const query = new QueryBuilder("Q")
+      .field("Media", { id: "id", search: "search" }, (media) =>
+        media.select("id"),
+      )
+      .field("Media", { search: "search", id: "id" }, (media) =>
+        media.select("episodes"),
+      )
+      .build();
+
+    expect(validate(schema, parse(query))).toEqual([]);
+  });
+
   test("produces queries that are valid against the AniList schema", () => {
     const queries = [
       animeQuery(),
@@ -185,6 +244,8 @@ describe("QueryBuilder", () => {
       root.field("GenreCollection", (selection) => selection);
       // @ts-expect-error unknown argument
       root.field("Media", { notAnArg: "x" }, (media) => media.select("id"));
+      // @ts-expect-error field takes no arguments
+      root.field("Viewer", { id: "id" }, (viewer) => viewer.select("id"));
       // @ts-expect-error argument bindings are variable names, not values
       root.field("Media", { id: 1 }, (media) => media.select("id"));
       // @ts-expect-error required argument is missing

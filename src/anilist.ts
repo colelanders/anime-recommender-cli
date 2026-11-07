@@ -62,7 +62,9 @@ type KeysWithoutRequiredArgs<T> = {
 }[ObjectKeys<T>];
 
 /** Maps each argument to the name of the variable that supplies its value. */
-type ArgBindings<A> = { [P in keyof A]: string };
+type ArgBindings<A> = [keyof A] extends [never]
+  ? Record<string, never>
+  : { [P in keyof A]: string };
 
 /** Rebuilds a field's null and list wrappers around its selected shape. */
 type Project<F, S> = F extends readonly (infer U)[]
@@ -90,7 +92,37 @@ const assertName = (name: string): void => {
 type Selection = {
   name: string;
   args: Record<string, string>;
-  child?: { render(variables: Map<string, string>): string };
+  child?: {
+    readonly selections: readonly Selection[];
+    render(variables: Map<string, string>): string;
+  };
+};
+
+const describeArgs = (args: Record<string, string>): string =>
+  Object.entries(args)
+    .map(([arg, variable]) => `${arg}: $${variable}`)
+    .toSorted()
+    .join(", ") || "no arguments";
+
+/** Throws if GraphQL couldn't merge duplicate fields in these selections. */
+const assertMergeable = (
+  path: string,
+  selections: readonly Selection[],
+): void => {
+  const groups = Map.groupBy(selections, (selection) => selection.name);
+  for (const [name, group] of groups) {
+    const fieldPath = `${path}.${name}`;
+    const variants = new Set(group.map(({ args }) => describeArgs(args)));
+    if (variants.size > 1) {
+      throw new Error(
+        `Conflicting arguments for ${fieldPath}: ${[...variants].join(" and ")}`,
+      );
+    }
+    assertMergeable(
+      fieldPath,
+      group.flatMap(({ child }) => child?.selections ?? []),
+    );
+  }
 };
 
 class SelectionBuilder<T, R = unknown> {
@@ -151,12 +183,17 @@ class SelectionBuilder<T, R = unknown> {
     assertName(name);
     const variables = new Map<string, string>();
     const body = this.render(variables);
+    assertMergeable(this.#typeName, this.#selections);
     const declarations = [...variables].map(
       ([variable, type]) => `$${variable}: ${type}`,
     );
     const signature =
       declarations.length > 0 ? `(${declarations.join(", ")})` : "";
     return `query ${name}${signature} ${body}`;
+  }
+
+  get selections(): readonly Selection[] {
+    return this.#selections;
   }
 
   /** Renders the selection set, recording each variable's GraphQL type. */

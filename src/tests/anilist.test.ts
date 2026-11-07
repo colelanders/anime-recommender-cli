@@ -1,10 +1,20 @@
 import { readFileSync } from "node:fs";
 import { buildSchema, parse, validate } from "graphql";
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+  vi,
+} from "vitest";
 import {
   AniListError,
+  DEFAULT_RATE_LIMIT,
   QueryBuilder,
   VariablesBuilder,
+  configureRateLimit,
   execute,
 } from "../anilist.js";
 import type { ResultOf } from "../anilist.js";
@@ -246,6 +256,18 @@ const jsonResponse = (
   headers: Record<string, string> = {},
 ) => new Response(JSON.stringify(body), { status, headers });
 
+const stubSuccess = () => {
+  const fetchStub = vi.fn<typeof fetch>(() =>
+    Promise.resolve(jsonResponse({ data: {} })),
+  );
+  vi.stubGlobal("fetch", fetchStub);
+  return fetchStub;
+};
+
+const advanceSeconds = (seconds: number) => {
+  vi.setSystemTime(Date.now() + seconds * 1000);
+};
+
 describe("execute", () => {
   const query = new QueryBuilder("GetGenres").select("GenreCollection").build();
 
@@ -259,6 +281,16 @@ describe("execute", () => {
     }
     throw error;
   };
+
+  const sendRequests = async (count: number) => {
+    for (let sent = 0; sent < count; sent += 1) {
+      await execute(query);
+    }
+  };
+
+  beforeEach(() => {
+    configureRateLimit(DEFAULT_RATE_LIMIT);
+  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -369,5 +401,184 @@ describe("execute", () => {
 
     expect(error.cause).toBeInstanceOf(SyntaxError);
     expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  describe("rate limiting", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("defaults to AniList's limit of 30 requests per minute", () => {
+      expect(DEFAULT_RATE_LIMIT).toEqual({ maxRequests: 30, windowMs: 60_000 });
+    });
+
+    test("rejects requests over the limit without sending them", async () => {
+      const fetchStub = stubSuccess();
+
+      await sendRequests(30);
+      const error = await failure();
+
+      expect(error.status).toBeUndefined();
+      expect(fetchStub).toHaveBeenCalledTimes(30);
+    });
+
+    test("reports how long to wait before retrying", async () => {
+      stubSuccess();
+      await sendRequests(30);
+      advanceSeconds(48);
+
+      const error = await failure();
+
+      expect(error.retryAfter).toBe(12);
+      expect(error.message).toContain("30 requests per 60 seconds");
+      expect(error.message).toContain("Try again in 12 seconds");
+    });
+
+    test("rounds the wait up to a whole second", async () => {
+      stubSuccess();
+      await sendRequests(30);
+      vi.setSystemTime(Date.now() + 59_001);
+
+      const error = await failure();
+
+      expect(error.retryAfter).toBe(1);
+      expect(error.message).toContain("Try again in 1 second.");
+    });
+
+    test("allows requests again once the window has passed", async () => {
+      const fetchStub = stubSuccess();
+      await sendRequests(30);
+      advanceSeconds(60);
+
+      await execute(query);
+
+      expect(fetchStub).toHaveBeenCalledTimes(31);
+    });
+
+    test("frees capacity as each request leaves the window", async () => {
+      stubSuccess();
+      configureRateLimit({ maxRequests: 2 });
+      await sendRequests(1);
+      advanceSeconds(30);
+      await sendRequests(1);
+      advanceSeconds(30);
+
+      await sendRequests(1);
+      const error = await failure();
+
+      expect(error.retryAfter).toBe(30);
+    });
+
+    test("doesn't count rejected requests towards the limit", async () => {
+      const fetchStub = stubSuccess();
+      configureRateLimit({ maxRequests: 1 });
+      await sendRequests(1);
+      advanceSeconds(30);
+      await failure();
+      advanceSeconds(30);
+
+      await sendRequests(1);
+
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    });
+
+    test("doesn't count invalid variables towards the limit", async () => {
+      const fetchStub = stubSuccess();
+      configureRateLimit({ maxRequests: 1 });
+      await failure("not json");
+
+      await sendRequests(1);
+
+      expect(fetchStub).toHaveBeenCalledOnce();
+    });
+
+    test("counts requests that fail on the network", async () => {
+      stubFetch(new TypeError("fetch failed"));
+      configureRateLimit({ maxRequests: 1 });
+      await failure();
+
+      const error = await failure();
+
+      expect(error.retryAfter).toBe(60);
+    });
+
+    test("enforces the limit on concurrent requests", async () => {
+      const fetchStub = stubSuccess();
+      configureRateLimit({ maxRequests: 2 });
+
+      const results = await Promise.allSettled([
+        execute(query),
+        execute(query),
+        execute(query),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual([
+        "fulfilled",
+        "fulfilled",
+        "rejected",
+      ]);
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    });
+
+    test("can be configured", async () => {
+      const fetchStub = stubSuccess();
+      configureRateLimit({ maxRequests: 2, windowMs: 10_000 });
+      await sendRequests(2);
+
+      const error = await failure();
+
+      expect(error.retryAfter).toBe(10);
+      expect(error.message).toContain("2 requests per 10 seconds");
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    });
+
+    test("keeps the current value of a setting that isn't passed", async () => {
+      stubSuccess();
+      configureRateLimit({ windowMs: 5000 });
+      configureRateLimit({ maxRequests: 1 });
+      await sendRequests(1);
+
+      expect((await failure()).retryAfter).toBe(5);
+    });
+
+    test.each([
+      { maxRequests: 0 },
+      { maxRequests: -1 },
+      { maxRequests: 1.5 },
+      { windowMs: 0 },
+      { windowMs: Number.NaN },
+    ])("rejects invalid settings: %o", (settings) => {
+      expect(() => configureRateLimit(settings)).toThrow(RangeError);
+    });
+
+    test("waits out a 429 from AniList before sending more", async () => {
+      const fetchStub = vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+          jsonResponse({ errors: [{ message: "Too Many Requests." }] }, 429, {
+            "Retry-After": "90",
+          }),
+        ),
+      );
+      vi.stubGlobal("fetch", fetchStub);
+
+      const rateLimited = await failure();
+      expect(rateLimited.status).toBe(429);
+      expect(rateLimited.message).toContain("Try again in 90 seconds");
+
+      advanceSeconds(30);
+      const blocked = await failure();
+      expect(blocked.status).toBeUndefined();
+      expect(blocked.retryAfter).toBe(60);
+      expect(fetchStub).toHaveBeenCalledOnce();
+
+      advanceSeconds(60);
+      await failure();
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    });
   });
 });

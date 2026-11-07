@@ -23,6 +23,7 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 - `src/generated/` is codegen output, committed and never hand-edited. `scripts/anilist-field-meta.mjs` is a custom codegen plugin that adds `FieldArgs` (field to args type) and `FIELD_META` (the runtime map used to derive variable declarations).
 - Call them `variables`, matching AniList's API, not configuration.
 - Query arguments always bind to variable names, never literals, because enums and strings can't be told apart at runtime.
+- `execute` enforces a sliding-window rate limit, set by `DEFAULT_RATE_LIMIT` or `configureRateLimit`. Over the limit it throws `AniListError` with `retryAfter` in seconds instead of waiting. The count is in memory, per process, so tests reset it in `beforeEach`.
 
 ## Testing
 

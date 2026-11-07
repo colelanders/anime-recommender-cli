@@ -47,6 +47,18 @@ console.log(result.Media?.title?.romaji);
 
 Arguments map to variable names, so `{ id: "id" }` means the `id` argument takes its value from the `id` variable. The variable's declared type comes from the schema. Failed requests throw `AniListError`, which carries the HTTP status, AniList's errors and any `Retry-After` value.
 
+### Rate limit
+
+`execute` allows 30 requests per 60 seconds by default, to stay within AniList's limit. To change it, edit `DEFAULT_RATE_LIMIT` in `src/anilist.ts`, or set it when the program runs:
+
+```ts
+configureRateLimit({ maxRequests: 90, windowMs: 60_000 });
+```
+
+A request over the limit isn't sent. `execute` throws an `AniListError` whose message says how long to wait, and whose `retryAfter` holds the wait in seconds. If AniList itself responds with `Retry-After`, requests are held back for that long too.
+
+The count is kept in memory, so it starts again each time the program runs.
+
 Queries are read-only for now. Mutations, authentication and fields that return a union aren't supported.
 
 ## Code rules

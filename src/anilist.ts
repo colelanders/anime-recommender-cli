@@ -244,6 +244,85 @@ export class AniListError extends Error {
   }
 }
 
+export type RateLimit = { maxRequests: number; windowMs: number };
+
+/** AniList's current limit. Change it here if AniList changes theirs. */
+export const DEFAULT_RATE_LIMIT: Readonly<RateLimit> = {
+  maxRequests: 30,
+  windowMs: 60_000,
+};
+
+const formatSeconds = (seconds: number): string =>
+  `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+
+class RateLimiter {
+  readonly #limit: Readonly<RateLimit>;
+  #requestTimes: number[] = [];
+  #blockedUntil = 0;
+
+  constructor(limit: Readonly<RateLimit>) {
+    this.#limit = limit;
+  }
+
+  get limit(): Readonly<RateLimit> {
+    return this.#limit;
+  }
+
+  /** Records a request, or throws if it would go over the limit. */
+  acquire(): void {
+    const now = Date.now();
+    const { maxRequests, windowMs } = this.#limit;
+    this.#requestTimes = this.#requestTimes.filter(
+      (time) => time > now - windowMs,
+    );
+
+    if (this.#blockedUntil > now) {
+      throw this.#limitError(
+        "AniList rate limit reached",
+        this.#blockedUntil - now,
+      );
+    }
+    const [oldest] = this.#requestTimes;
+    if (oldest !== undefined && this.#requestTimes.length >= maxRequests) {
+      throw this.#limitError(
+        `AniList rate limit reached (${maxRequests} requests per ${formatSeconds(windowMs / 1000)})`,
+        oldest + windowMs - now,
+      );
+    }
+    this.#requestTimes.push(now);
+  }
+
+  /** Holds requests back for as long as AniList has asked us to wait. */
+  blockFor(seconds: number): void {
+    this.#blockedUntil = Date.now() + seconds * 1000;
+  }
+
+  #limitError(reason: string, waitMs: number): AniListError {
+    const retryAfter = Math.ceil(waitMs / 1000);
+    return new AniListError(
+      `${reason}. Try again in ${formatSeconds(retryAfter)}.`,
+      { retryAfter },
+    );
+  }
+}
+
+let rateLimiter = new RateLimiter(DEFAULT_RATE_LIMIT);
+
+/**
+ * Changes the request limit for this process. Settings that aren't passed keep
+ * their current value, and the count of recent requests starts again.
+ */
+export const configureRateLimit = (settings: Partial<RateLimit>): void => {
+  const limit = { ...rateLimiter.limit, ...settings };
+  if (!Number.isInteger(limit.maxRequests) || limit.maxRequests < 1) {
+    throw new RangeError("maxRequests must be a positive whole number");
+  }
+  if (!Number.isFinite(limit.windowMs) || limit.windowMs <= 0) {
+    throw new RangeError("windowMs must be a positive number");
+  }
+  rateLimiter = new RateLimiter(limit);
+};
+
 type ResponseBody = { data?: unknown; errors?: AniListErrorDetail[] };
 
 const readBody = async (response: Response): Promise<ResponseBody> => {
@@ -285,21 +364,29 @@ export const execute = async <R>(
   query: AniListQuery<R>,
   variables = "{}",
 ): Promise<R> => {
-  const response = await send(query, parseVariables(variables));
+  const parsedVariables = parseVariables(variables);
+  rateLimiter.acquire();
+  const response = await send(query, parsedVariables);
   const { status } = response;
   const { data, errors = [] } = await readBody(response);
 
   if (!response.ok || errors.length > 0 || data === undefined || data === null) {
-    const retryAfter = Number(response.headers.get("Retry-After") ?? Number.NaN);
+    const header = Number(response.headers.get("Retry-After") ?? Number.NaN);
+    const retryAfter = Number.isNaN(header) ? undefined : header;
+    if (retryAfter !== undefined) {
+      rateLimiter.blockFor(retryAfter);
+    }
     const details = errors.map((error) => error.message).join("; ");
-    throw new AniListError(
-      `AniList request failed (${status})${details === "" ? "" : `: ${details}`}`,
-      {
-        status,
-        errors,
-        retryAfter: Number.isNaN(retryAfter) ? undefined : retryAfter,
-      },
-    );
+    const reason = details === "" ? "." : `: ${details}`;
+    const hint =
+      retryAfter === undefined
+        ? ""
+        : ` Try again in ${formatSeconds(retryAfter)}.`;
+    throw new AniListError(`AniList request failed (${status})${reason}${hint}`, {
+      status,
+      errors,
+      retryAfter,
+    });
   }
   return data as R;
 };

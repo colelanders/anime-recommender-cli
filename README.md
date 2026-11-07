@@ -60,7 +60,7 @@ A request over the limit isn't sent. `execute` throws an `AniListError` whose me
 
 The count is kept in memory, so it starts again each time the program runs.
 
-Queries are read-only for now. Mutations, authentication and fields that return a union aren't supported.
+Queries are read-only for now. Mutations, authentication, aliases, fields that return a union and arguments on leaf fields (such as `description(asHtml: true)`) aren't supported. Selecting the same field twice with different arguments throws at `build()`, because it would need aliases.
 
 ## Code rules
 

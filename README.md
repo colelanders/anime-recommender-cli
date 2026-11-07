@@ -19,6 +19,7 @@ npm start
 | `npm start`     | Runs the full build, then runs `dist/main.mjs`                        |
 | `npm run lint`  | Lints with `oxlint`                                                   |
 | `npm test`      | Runs unit tests with `vitest`. They never call the real AniList API   |
+| `npm run test:coverage` | Runs unit tests and reports coverage, with an HTML report in `coverage/` |
 | `npm run codegen` | Regenerates `src/generated/` from AniList's live schema             |
 
 ## AniList service

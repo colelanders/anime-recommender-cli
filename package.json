@@ -11,13 +11,15 @@
     "build": "tsc --noEmit && oxlint && tsdown",
     "lint": "oxlint",
     "start": "npm run build && node dist/main.mjs",
-    "codegen": "graphql-codegen --config codegen.yml"
+    "codegen": "graphql-codegen --config codegen.yml",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^8.0.0",
     "@graphql-codegen/schema-ast": "^7.0.0",
     "@graphql-codegen/typescript": "^7.0.0",
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
     "graphql": "^17.1.0",
     "oxlint": "^1.92.0",
     "tsdown": "^0.23.7",

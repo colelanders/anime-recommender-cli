@@ -18,7 +18,36 @@ npm start
 | `npm run build` | Type-checks with `tsc`, lints with `oxlint`, then bundles with `tsdown` to `dist/main.mjs` |
 | `npm start`     | Runs the full build, then runs `dist/main.mjs`                        |
 | `npm run lint`  | Lints with `oxlint`                                                   |
-| `npm test`      | Runs tests with `vitest` (there are no tests yet)                     |
+| `npm test`      | Runs unit tests with `vitest`. They never call the real AniList API   |
+| `npm run codegen` | Regenerates `src/generated/` from AniList's live schema             |
+
+## AniList service
+
+`src/anilist.ts` builds queries and sends them to AniList's GraphQL API. Field names and arguments are checked at compile time, and results are typed by what you select.
+
+```ts
+import { QueryBuilder, VariablesBuilder, execute } from "./anilist.js";
+
+const query = new QueryBuilder("GetAnime")
+  .field("Media", { id: "id", type: "type" }, (media) =>
+    media
+      .select("id", "episodes")
+      .field("title", (title) => title.select("romaji")),
+  )
+  .build();
+
+const variables = new VariablesBuilder()
+  .set("id", 1)
+  .set("type", "ANIME")
+  .build();
+
+const result = await execute(query, variables);
+console.log(result.Media?.title?.romaji);
+```
+
+Arguments map to variable names, so `{ id: "id" }` means the `id` argument takes its value from the `id` variable. The variable's declared type comes from the schema. Failed requests throw `AniListError`, which carries the HTTP status, AniList's errors and any `Retry-After` value.
+
+Queries are read-only for now. Mutations, authentication and fields that return a union aren't supported.
 
 ## Code rules
 

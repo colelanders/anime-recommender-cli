@@ -22,6 +22,10 @@ npm start
 | `npm run test:coverage` | Runs unit tests and reports coverage, with an HTML report in `coverage/` |
 | `npm run codegen` | Regenerates `src/generated/` from AniList's live schema             |
 
+## Code coverage on pull requests
+
+`.github/workflows/coverage.yml` runs the tests on pushes to `main` and on pull requests, then uploads a Cobertura report to GitHub Code Quality. `github-code-quality[bot]` comments on the pull request with coverage compared to `main`. This needs Code Quality enabled in the repository's settings.
+
 ## AniList service
 
 `src/anilist.ts` builds queries and sends them to AniList's GraphQL API. Field names and arguments are checked at compile time, and results are typed by what you select.

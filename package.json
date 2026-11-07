@@ -9,7 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "build": "tsc --noEmit && oxlint && tsdown",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "start": "npm run build && node dist/main.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

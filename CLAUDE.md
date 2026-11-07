@@ -9,6 +9,7 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 ## Commands
 
 - Type-check, lint and bundle: `npm run build` (runs `tsc --noEmit && oxlint && tsdown`, output goes to `dist/main.mjs`)
+- Build and run: `npm start` (runs `npm run build && node dist/main.mjs`)
 - Lint only: `npm run lint`
 - Run all tests: `npm test` (runs `vitest run`)
 - Run a single test file: `npx vitest run src/path/to/file.test.ts`

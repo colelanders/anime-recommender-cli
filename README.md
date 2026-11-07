@@ -8,8 +8,7 @@ This project is in early setup. The recommender isn't built yet, and the program
 
 ```sh
 npm install
-npm run build
-node dist/main.mjs
+npm start
 ```
 
 ## Scripts
@@ -17,6 +16,7 @@ node dist/main.mjs
 | Command         | What it does                                                          |
 | --------------- | --------------------------------------------------------------------- |
 | `npm run build` | Type-checks with `tsc`, lints with `oxlint`, then bundles with `tsdown` to `dist/main.mjs` |
+| `npm start`     | Runs the full build, then runs `dist/main.mjs`                        |
 | `npm run lint`  | Lints with `oxlint`                                                   |
 | `npm test`      | Runs tests with `vitest` (there are no tests yet)                     |
 

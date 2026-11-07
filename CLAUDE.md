@@ -27,7 +27,13 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 
 ## Testing
 
-- Tests live in `src/tests/`, are written first (TDD), and are unit tests only. They must not call the real AniList API: stub `fetch`, and validate queries against `src/generated/schema.graphql`.
+- Follow test-driven development for every code change, including bug fixes:
+  1. Write a test for the new behaviour first.
+  2. Run it and confirm it fails for the expected reason.
+  3. Write the minimum code to make it pass.
+  4. Refactor with the tests still passing.
+- Compile-time rules can't fail under Vitest, so confirm those tests with `tsc --noEmit` instead.
+- Tests live in `src/tests/` and are unit tests only. They must not call the real AniList API: stub `fetch`, and validate queries against `src/generated/schema.graphql`.
 - Vitest doesn't type-check, so `expectTypeOf` and `@ts-expect-error` tests are only enforced by `tsc`. Run `npm run build` as well as `npm test`.
 
 ## Git

@@ -1,0 +1,17 @@
+overwrite: true
+schema: https://graphql.anilist.co
+generates:
+  src/generated/anilist.ts:
+    plugins:
+      - typescript
+      - ./scripts/anilist-field-meta.mjs
+    config:
+      defaultScalarType: unknown
+      enumsAsTypes: true
+      scalars:
+        CountryCode: string
+        FuzzyDateInt: number
+        Json: unknown
+  src/generated/schema.graphql:
+    plugins:
+      - schema-ast

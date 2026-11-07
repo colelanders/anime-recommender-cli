@@ -18,7 +18,57 @@ npm start
 | `npm run build` | Type-checks with `tsc`, lints with `oxlint`, then bundles with `tsdown` to `dist/main.mjs` |
 | `npm start`     | Runs the full build, then runs `dist/main.mjs`                        |
 | `npm run lint`  | Lints with `oxlint`                                                   |
-| `npm test`      | Runs tests with `vitest` (there are no tests yet)                     |
+| `npm test`      | Runs unit tests with `vitest`. They never call the real AniList API   |
+| `npm run test:coverage` | Runs unit tests and reports coverage, with an HTML report in `coverage/` |
+| `npm run codegen` | Regenerates `src/generated/` from AniList's live schema             |
+
+## Code coverage on pull requests
+
+`.github/workflows/coverage.yml` runs `npm run test:coverage` on pushes to `main` and on pull requests. The run fails if line coverage is below 90% across `src/`, leaving out `src/generated/` and `src/tests/`. The threshold is set in `vitest.config.ts`.
+
+GitHub doesn't require this check to pass, so only merge a pull request once it has. It also doesn't run `npm run build`, so run that yourself to catch type and lint errors.
+
+## AniList service
+
+`src/anilist.ts` builds queries and sends them to AniList's GraphQL API. Field names and arguments are checked at compile time, and results are typed by what you select.
+
+```ts
+import { QueryBuilder, VariablesBuilder, execute } from "./anilist.js";
+
+const query = new QueryBuilder("GetAnime")
+  .field("Media", { id: "id", type: "type" }, (media) =>
+    media
+      .select("id", "episodes")
+      .field("title", (title) => title.select("romaji")),
+  )
+  .build();
+
+const variables = new VariablesBuilder()
+  .set("id", 1)
+  .set("type", "ANIME")
+  .build();
+
+const result = await execute(query, variables);
+console.log(result.Media?.title?.romaji);
+```
+
+Arguments map to variable names, so `{ id: "id" }` means the `id` argument takes its value from the `id` variable. The variable's declared type comes from the schema. Failed requests throw `AniListError`, which carries the HTTP status, AniList's errors and any `Retry-After` value.
+
+### Rate limit
+
+`execute` allows 30 requests per 60 seconds by default, to stay within AniList's limit. To change it, edit `DEFAULT_RATE_LIMIT` in `src/anilist.ts`, or set it when the program runs:
+
+```ts
+configureRateLimit({ maxRequests: 90, windowMs: 60_000 });
+```
+
+A request over the limit isn't sent. `execute` throws an `AniListError` whose message says how long to wait, and whose `retryAfter` holds the wait in seconds. If AniList itself responds with `Retry-After`, requests are held back for that long too.
+
+The count is kept in memory, so it starts again each time the program runs.
+
+### Limitations
+
+Queries are read-only for now. Mutations, authentication, aliases, fields that return a union and arguments on leaf fields (such as `description(asHtml: true)`) aren't supported. Selecting the same field twice with different arguments throws at `build()`, because it would need aliases.
 
 ## Code rules
 

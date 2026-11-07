@@ -217,3 +217,89 @@ export class VariablesBuilder {
     return JSON.stringify(Object.fromEntries(this.#values));
   }
 }
+
+const ANILIST_URL = "https://graphql.anilist.co";
+
+export type AniListErrorDetail = { message: string };
+
+type AniListErrorOptions = {
+  status?: number | undefined;
+  errors?: readonly AniListErrorDetail[] | undefined;
+  retryAfter?: number | undefined;
+  cause?: unknown;
+};
+
+export class AniListError extends Error {
+  readonly status: number | undefined;
+  readonly errors: readonly AniListErrorDetail[];
+  /** Seconds to wait before retrying, when AniList has rate limited the request. */
+  readonly retryAfter: number | undefined;
+
+  constructor(message: string, options: AniListErrorOptions = {}) {
+    super(message, { cause: options.cause });
+    this.name = "AniListError";
+    this.status = options.status;
+    this.errors = options.errors ?? [];
+    this.retryAfter = options.retryAfter;
+  }
+}
+
+type ResponseBody = { data?: unknown; errors?: AniListErrorDetail[] };
+
+const readBody = async (response: Response): Promise<ResponseBody> => {
+  try {
+    const body: unknown = await response.json();
+    return typeof body === "object" && body !== null ? body : {};
+  } catch {
+    return {};
+  }
+};
+
+const parseVariables = (variables: string): unknown => {
+  try {
+    return JSON.parse(variables);
+  } catch (cause) {
+    throw new AniListError("Invalid variables: expected a JSON string", {
+      cause,
+    });
+  }
+};
+
+const send = async (query: string, variables: unknown): Promise<Response> => {
+  try {
+    return await fetch(ANILIST_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (cause) {
+    throw new AniListError("Could not reach AniList", { cause });
+  }
+};
+
+/** Sends a query to AniList and returns its data, or throws `AniListError`. */
+export const execute = async <R>(
+  query: AniListQuery<R>,
+  variables = "{}",
+): Promise<R> => {
+  const response = await send(query, parseVariables(variables));
+  const { status } = response;
+  const { data, errors = [] } = await readBody(response);
+
+  if (!response.ok || errors.length > 0 || data === undefined || data === null) {
+    const retryAfter = Number(response.headers.get("Retry-After") ?? Number.NaN);
+    const details = errors.map((error) => error.message).join("; ");
+    throw new AniListError(
+      `AniList request failed (${status})${details === "" ? "" : `: ${details}`}`,
+      {
+        status,
+        errors,
+        retryAfter: Number.isNaN(retryAfter) ? undefined : retryAfter,
+      },
+    );
+  }
+  return data as R;
+};

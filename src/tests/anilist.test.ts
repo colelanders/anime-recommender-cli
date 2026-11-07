@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { buildSchema, parse, validate } from "graphql";
-import { describe, expect, expectTypeOf, test } from "vitest";
-import { QueryBuilder, VariablesBuilder } from "../anilist.js";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import {
+  AniListError,
+  QueryBuilder,
+  VariablesBuilder,
+  execute,
+} from "../anilist.js";
 import type { ResultOf } from "../anilist.js";
 import type { MediaType } from "../generated/anilist.js";
 
@@ -222,5 +227,147 @@ describe("VariablesBuilder", () => {
       genres: ["Action", "Drama"],
       season: null,
     });
+  });
+});
+
+const stubFetch = (response: Response | Error) => {
+  const fetchStub = vi.fn<typeof fetch>(() =>
+    response instanceof Error
+      ? Promise.reject(response)
+      : Promise.resolve(response),
+  );
+  vi.stubGlobal("fetch", fetchStub);
+  return fetchStub;
+};
+
+const jsonResponse = (
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+) => new Response(JSON.stringify(body), { status, headers });
+
+describe("execute", () => {
+  const query = new QueryBuilder("GetGenres").select("GenreCollection").build();
+
+  const failure = async (variables?: string): Promise<AniListError> => {
+    const error: unknown = await execute(query, variables).then(
+      () => new Error("Expected execute to reject"),
+      (reason: unknown) => reason,
+    );
+    if (error instanceof AniListError) {
+      return error;
+    }
+    throw error;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("posts the query and variables to AniList", async () => {
+    const fetchStub = stubFetch(jsonResponse({ data: {} }));
+
+    await execute(query, new VariablesBuilder().set("id", 1).build());
+
+    expect(fetchStub).toHaveBeenCalledOnce();
+    const [url, init] = fetchStub.mock.calls[0] ?? [];
+    expect(url).toBe("https://graphql.anilist.co");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toEqual({
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      query,
+      variables: { id: 1 },
+    });
+  });
+
+  test("sends empty variables by default", async () => {
+    const fetchStub = stubFetch(jsonResponse({ data: {} }));
+
+    await execute(query);
+
+    const init = fetchStub.mock.calls[0]?.[1];
+    expect(JSON.parse(String(init?.body)).variables).toEqual({});
+  });
+
+  test("returns data typed by the query", async () => {
+    stubFetch(jsonResponse({ data: { GenreCollection: ["Action"] } }));
+
+    const result = await execute(query);
+
+    expect(result).toEqual({ GenreCollection: ["Action"] });
+    expectTypeOf(result.GenreCollection).toEqualTypeOf<
+      (string | null)[] | null | undefined
+    >();
+  });
+
+  test("throws AniListError for HTTP errors with GraphQL errors", async () => {
+    const errors = [{ message: "Not Found.", status: 404 }];
+    stubFetch(jsonResponse({ data: null, errors }, 404));
+
+    const error = await failure();
+
+    expect(error.status).toBe(404);
+    expect(error.errors).toEqual(errors);
+    expect(error.message).toContain("Not Found.");
+  });
+
+  test("throws AniListError for GraphQL errors on a 200 response", async () => {
+    const errors = [{ message: "Partial failure" }];
+    stubFetch(jsonResponse({ data: { GenreCollection: [] }, errors }));
+
+    const error = await failure();
+
+    expect(error.status).toBe(200);
+    expect(error.errors).toEqual(errors);
+  });
+
+  test("includes Retry-After when rate limited", async () => {
+    stubFetch(
+      jsonResponse({ errors: [{ message: "Too Many Requests." }] }, 429, {
+        "Retry-After": "60",
+      }),
+    );
+
+    const error = await failure();
+
+    expect(error.status).toBe(429);
+    expect(error.retryAfter).toBe(60);
+  });
+
+  test("throws AniListError when the response is not JSON", async () => {
+    stubFetch(new Response("<html>Bad Gateway</html>", { status: 502 }));
+
+    const error = await failure();
+
+    expect(error.status).toBe(502);
+    expect(error.errors).toEqual([]);
+  });
+
+  test("throws AniListError when a successful response has no data", async () => {
+    stubFetch(jsonResponse({}));
+
+    expect((await failure()).status).toBe(200);
+  });
+
+  test("throws AniListError with the cause on network failures", async () => {
+    const cause = new TypeError("fetch failed");
+    stubFetch(cause);
+
+    const error = await failure();
+
+    expect(error.status).toBeUndefined();
+    expect(error.cause).toBe(cause);
+  });
+
+  test("throws AniListError without a request for invalid variables", async () => {
+    const fetchStub = stubFetch(jsonResponse({ data: {} }));
+
+    const error = await failure("not json");
+
+    expect(error.cause).toBeInstanceOf(SyntaxError);
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 });

@@ -24,7 +24,7 @@ npm start
 
 ## Code coverage on pull requests
 
-`.github/workflows/coverage.yml` runs the tests on pushes to `main` and on pull requests, then uploads a Cobertura report to GitHub Code Quality. `github-code-quality[bot]` comments on the pull request with coverage compared to `main`. This needs Code Quality enabled in the repository's settings.
+`.github/workflows/coverage.yml` runs `npm run test:coverage` on pushes to `main` and on pull requests. The run fails if line coverage is below 90%, the threshold set in `vitest.config.ts`.
 
 ## AniList service
 

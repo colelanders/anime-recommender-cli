@@ -12,7 +12,7 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 - Build and run: `npm start` (runs `npm run build && node dist/main.mjs`)
 - Lint only: `npm run lint`
 - Run all tests: `npm test` (runs `vitest run`)
-- Run tests with coverage: `npm run test:coverage` (excludes `src/generated/` and `src/tests/`). `.github/workflows/coverage.yml` uploads its Cobertura report on pull requests and pushes to `main`, so keep that reporter in `vitest.config.ts`.
+- Run tests with coverage: `npm run test:coverage` (excludes `src/generated/` and `src/tests/`). It fails below the 90% line coverage threshold in `vitest.config.ts`, and `.github/workflows/coverage.yml` runs it on pull requests and pushes to `main`.
 - Run a single test file: `npx vitest run src/path/to/file.test.ts`
 - Run tests matching a name: `npx vitest run -t "test name"`
 - Regenerate AniList types: `npm run codegen` (the only command that contacts AniList)

@@ -24,7 +24,9 @@ npm start
 
 ## Code coverage on pull requests
 
-`.github/workflows/coverage.yml` runs `npm run test:coverage` on pushes to `main` and on pull requests. The run fails if line coverage is below 90%, the threshold set in `vitest.config.ts`.
+`.github/workflows/coverage.yml` runs `npm run test:coverage` on pushes to `main` and on pull requests. The run fails if line coverage is below 90% across `src/`, leaving out `src/generated/` and `src/tests/`. The threshold is set in `vitest.config.ts`.
+
+GitHub doesn't require this check to pass, so only merge a pull request once it has. It also doesn't run `npm run build`, so run that yourself to catch type and lint errors.
 
 ## AniList service
 
@@ -63,6 +65,8 @@ configureRateLimit({ maxRequests: 90, windowMs: 60_000 });
 A request over the limit isn't sent. `execute` throws an `AniListError` whose message says how long to wait, and whose `retryAfter` holds the wait in seconds. If AniList itself responds with `Retry-After`, requests are held back for that long too.
 
 The count is kept in memory, so it starts again each time the program runs.
+
+### Limitations
 
 Queries are read-only for now. Mutations, authentication, aliases, fields that return a union and arguments on leaf fields (such as `description(asHtml: true)`) aren't supported. Selecting the same field twice with different arguments throws at `build()`, because it would need aliases.
 

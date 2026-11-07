@@ -34,13 +34,14 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
   2. Run it and confirm it fails for the expected reason.
   3. Write the minimum code to make it pass.
   4. Refactor with the tests still passing.
-- Compile-time rules can't fail under Vitest, so confirm those tests with `tsc --noEmit` instead.
 - Tests live in `src/tests/` and are unit tests only. They must not call the real AniList API: stub `fetch`, and validate queries against `src/generated/schema.graphql`.
-- Vitest doesn't type-check, so `expectTypeOf` and `@ts-expect-error` tests are only enforced by `tsc`. Run `npm run build` as well as `npm test`.
+- Vitest doesn't type-check, so `expectTypeOf` and `@ts-expect-error` tests can only fail under `tsc`. Confirm them with `tsc --noEmit`, and run `npm run build` as well as `npm test`. The coverage workflow doesn't run the build either.
 
 ## Git
 
 Do not create feature branches unless expressly told to. Do all work and make all commits on the branch that is current at the time of the request, including when that branch is `main`.
+
+Only merge a pull request once its `test` check has passed. The repository's ruleset requires a pull request but not this check, so GitHub won't stop a merge when it fails.
 
 ## Conventions
 

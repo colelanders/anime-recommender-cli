@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This is a new project for a simple CLI anime recommender. So far `src/main.ts` only prints a placeholder message, and `src/anilist.ts` is not wired into it yet. Update this file as the architecture takes shape, and keep `README.md` in sync whenever a change affects what it describes, such as features, setup, scripts or code rules.
+This is a new project for a simple CLI anime recommender. So far `src/main.ts` only prints a placeholder message, and neither `src/anilist.ts` nor `src/image.ts` is wired into it yet. Update this file as the architecture takes shape, and keep `README.md` in sync whenever a change affects what it describes, such as features, setup, scripts or code rules.
 
 ## Commands
 
@@ -20,6 +20,7 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 ## System dependencies
 
 - [chafa](https://hpjansson.org/chafa/) draws images in the terminal and needs version 1.18.3 or later. It's a system binary on `PATH` (`brew install chafa` or `apt install chafa`), not an npm package, so `npm install` doesn't provide it. `README.md` lists it under Getting started.
+- `src/image.ts` has `displayImageFromUrl(url)`, which downloads with `fetch` and sends the bytes to `chafa -` on stdin, never through a shell. `checkChafa()` runs first and throws `ImageError` if chafa is missing or older than `MIN_CHAFA_VERSION`. Nothing calls `process.exit`, so the caller decides how to handle it.
 - Unit tests must not run the real `chafa`, just as they must not call AniList: stub the process spawn. CI doesn't install it.
 
 ## AniList service

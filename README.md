@@ -13,6 +13,8 @@ brew install chafa        # macOS
 sudo apt install chafa    # Debian and Ubuntu
 ```
 
+Use a terminal emulator that supports inline graphics, such as [Kitty](https://sw.kovidgoyal.net/kitty/) or [Ghostty](https://ghostty.org/). In other terminals, images won't display correctly.
+
 Then install and run:
 
 ```sh

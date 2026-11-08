@@ -6,6 +6,15 @@ This project is in early setup. The recommender isn't built yet, and the program
 
 ## Getting started
 
+Images are drawn in the terminal with [chafa](https://hpjansson.org/chafa/), a system program that npm doesn't install. It needs version 1.18.3 or later. Install it first and check the version with `chafa --version`:
+
+```sh
+brew install chafa        # macOS
+sudo apt install chafa    # Debian and Ubuntu
+```
+
+Then install and run:
+
 ```sh
 npm install
 npm start

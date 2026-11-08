@@ -17,6 +17,11 @@ This is a new project for a simple CLI anime recommender. So far `src/main.ts` o
 - Run tests matching a name: `npx vitest run -t "test name"`
 - Regenerate AniList types: `npm run codegen` (the only command that contacts AniList)
 
+## System dependencies
+
+- [chafa](https://hpjansson.org/chafa/) draws images in the terminal and needs version 1.18.3 or later. It's a system binary on `PATH` (`brew install chafa` or `apt install chafa`), not an npm package, so `npm install` doesn't provide it. `README.md` lists it under Getting started.
+- Unit tests must not run the real `chafa`, just as they must not call AniList: stub the process spawn. CI doesn't install it.
+
 ## AniList service
 
 `src/anilist.ts` has `QueryBuilder` and `VariablesBuilder`, which each produce a string, and `execute(query, variables)`, which sends them.
